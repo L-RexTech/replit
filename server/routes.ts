@@ -31,8 +31,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         Format your response in HTML format with proper headings and bullet points. Include a job fit score at the beginning.
       `;
       
-      // Call the Gemini API
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=${apiKey}`, {
+      // Call the Gemini API using 2.0-flash model
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

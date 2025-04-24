@@ -46,7 +46,7 @@ export default function ApiKeyInput({ value, onChange }: ApiKeyInputProps) {
           </p>
           <div className="bg-gray-800 p-2 rounded mt-2 overflow-x-auto text-xs">
             <code className="text-green-400">
-              curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=YOUR_API_KEY" \<br />
+              curl "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=YOUR_API_KEY" \<br />
               -H "Content-Type: application/json" \<br />
               -X POST \<br />
               -d '&#123; "contents": [&#123; "parts": [&#123; "text": "Explain how AI works" &#125;] &#125;] &#125;'
