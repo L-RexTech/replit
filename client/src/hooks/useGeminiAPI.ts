@@ -43,13 +43,8 @@ export default function useGeminiAPI() {
 
       // Construct the prompt for Gemini API
       const prompt = `
-        As an AI career assistant, analyze the following resume and job description. 
-        Provide a detailed analysis including:
-        
-        1. A job fit score as a percentage (e.g., 75%)
-        2. List of matched skills found in both the resume and job description with HTML <ul> and <li> tags
-        3. List of missing skills that are in the job description but not in the resume with HTML <ul> and <li> tags
-        4. A brief analysis of the candidate's fit for the role and recommendations
+        As an AI career assistant, analyze the following resume and job description.
+        You will need to output structured data for visualization as well as analysis text.
         
         Resume:
         ${resumeText}
@@ -57,9 +52,65 @@ export default function useGeminiAPI() {
         Job Description:
         ${jobDescription}
         
-        Format your response in HTML format with proper <h1>, <h2>, <h3> headings and <ul>, <li> bullet points. 
-        Include a job fit score as a percentage at the beginning.
-        Also provide data about the market demand trends for these skills over the past 6 months.
+        Please provide a detailed analysis in the following structured format:
+        
+        1. JOB_FIT_SCORE: [A number between 0-100 representing the job fit score]
+        
+        2. MATCHED_SKILLS:
+        <ul>
+        <li>[Skill name 1] - [proficiency score between 70-95]</li>
+        <li>[Skill name 2] - [proficiency score between 70-95]</li>
+        [Continue for all matched skills]
+        </ul>
+        
+        3. MISSING_SKILLS:
+        <ul>
+        <li>[Skill name 1] - [importance score between 70-95]</li>
+        <li>[Skill name 2] - [importance score between 70-95]</li>
+        [Continue for all missing skills]
+        </ul>
+        
+        4. MARKET_DEMAND:
+        <ul>
+        <li>Jan: [demand value between 30-100]</li>
+        <li>Feb: [demand value between 30-100]</li>
+        <li>Mar: [demand value between 30-100]</li>
+        <li>Apr: [demand value between 30-100]</li>
+        <li>May: [demand value between 30-100]</li>
+        <li>Jun: [demand value between 30-100]</li>
+        </ul>
+        
+        5. CAREER_PROJECTION:
+        <ul>
+        <li>Average 1 Year: [value between 30-50]</li>
+        <li>Average 2 Years: [value between 40-60]</li>
+        <li>Average 3 Years: [value between 50-70]</li>
+        <li>Average 4 Years: [value between 60-80]</li>
+        <li>Average 5 Years: [value between 70-90]</li>
+        <li>Average 6 Years: [value between 80-95]</li>
+        <li>Projected 1 Year: [value between 35-55]</li>
+        <li>Projected 2 Years: [value between 45-65]</li>
+        <li>Projected 3 Years: [value between 55-75]</li>
+        <li>Projected 4 Years: [value between 65-85]</li>
+        <li>Projected 5 Years: [value between 75-95]</li>
+        <li>Projected 6 Years: [value between 85-100]</li>
+        </ul>
+        
+        6. BUSINESS_METRICS:
+        <ul>
+        <li>Traditional Time to Hire: [value between 30-60] days</li>
+        <li>Tool Time to Hire: [value between 10-25] days</li>
+        <li>Traditional Cost: [value between 3000-7000] dollars</li>
+        <li>Tool Cost: [value between 1000-3000] dollars</li>
+        </ul>
+        
+        7. ANALYSIS_TEXT:
+        <h1>Job Fit Analysis: [score]%</h1>
+        [Provide a detailed HTML analysis with h2, h3 headings for sections, paragraphs, and bullet points]
+        [Include sections for matched skills, missing skills, and recommendations]
+        [Make it look professional and informative for a job seeker]
+        
+        Be sure to follow the exact format structure shown above so that the data can be properly extracted for visualization.
       `;
       
       console.log("Sending request to Gemini API...");
@@ -118,33 +169,21 @@ export default function useGeminiAPI() {
       console.log("Received response from Gemini API");
       
       // Extract job fit score from response
-      const scoreMatch = textResponse.match(/(\d+)%/);
-      const jobFitScore = scoreMatch ? parseInt(scoreMatch[1], 10) : 70;
+      const jobFitScoreMatch = textResponse.match(/JOB_FIT_SCORE:\s*(\d+)/i);
+      const jobFitScore = jobFitScoreMatch ? parseInt(jobFitScoreMatch[1], 10) : 70;
       
       // Parse the response to extract skills
       const matchedSkills = extractSkills(textResponse, 'matched');
       const missingSkills = extractSkills(textResponse, 'missing');
       
-      // Generate market data based on matched skills
-      const marketData = generateMarketData(matchedSkills);
+      // Extract market demand data
+      const marketData = extractMarketData(textResponse);
       
-      // Generate career projection
-      const careerProjection = {
-        average: [30, 45, 60, 75, 85, 95],
-        projected: [35, 50, 65, 80, 90, 97]
-      };
+      // Extract career projection
+      const careerProjection = extractCareerProjection(textResponse);
       
-      // Business metrics
-      const businessMetrics = {
-        timeToHire: {
-          traditional: 45,
-          withTool: 15
-        },
-        costSavings: {
-          traditional: 5000,
-          withTool: 2000
-        }
-      };
+      // Extract business metrics
+      const businessMetrics = extractBusinessMetrics(textResponse);
       
       // Create final analysis data
       const analysisData: AnalysisData = {
@@ -171,59 +210,47 @@ export default function useGeminiAPI() {
   return { analyze, isLoading, error, data };
 }
 
-// Helper function to extract skills from Gemini response
+// Extract skills data with proficiency scores
 function extractSkills(text: string, type: 'matched' | 'missing'): { name: string; proficiency: number }[] {
   const skills: { name: string; proficiency: number }[] = [];
   
-  // Try multiple potential patterns for extracting skills
-  const regexPatterns = [
-    // Standard pattern
-    type === 'matched' 
-      ? /Matched skills:([^]*?)(?=Missing skills:|$)/mi
-      : /Missing skills:([^]*?)(?=Recommendations:|$)/mi,
-    // Alternative with headers
-    type === 'matched'
-      ? /<h[2-3]>.*?match.*?skills.*?<\/h[2-3]>([^]*?)(?=<h[2-3]>|$)/i
-      : /<h[2-3]>.*?missing.*?skills.*?<\/h[2-3]>([^]*?)(?=<h[2-3]>|$)/i,
-    // Alternative with strong tags
-    type === 'matched'
-      ? /<strong>.*?match.*?skills.*?<\/strong>([^]*?)(?=<strong>|$)/i
-      : /<strong>.*?missing.*?skills.*?<\/strong>([^]*?)(?=<strong>|$)/i
-  ];
+  // Define the section marker based on type
+  const sectionMarker = type === 'matched' ? 'MATCHED_SKILLS:' : 'MISSING_SKILLS:';
   
-  let skillSection = "";
+  // Extract the skills section
+  const sectionRegex = new RegExp(`${sectionMarker}\\s*<ul>([\\s\\S]*?)<\\/ul>`, 'i');
+  const sectionMatch = text.match(sectionRegex);
   
-  // Try each pattern until we find one that works
-  for (const regex of regexPatterns) {
-    const match = text.match(regex);
-    if (match && match[1]) {
-      skillSection = match[1];
-      break;
+  if (sectionMatch && sectionMatch[1]) {
+    // Extract list items
+    const listItemRegex = /<li>(.*?)<\/li>/g;
+    let match;
+    
+    // Use regex to extract each list item
+    while ((match = listItemRegex.exec(sectionMatch[1])) !== null) {
+      const itemText = match[1].trim();
+      
+      // Try to extract skill name and proficiency
+      const skillMatch = itemText.match(/(.*?)\s*-\s*(\d+)/);
+      
+      if (skillMatch) {
+        const skillName = skillMatch[1].trim();
+        const proficiency = parseInt(skillMatch[2], 10);
+        
+        if (skillName && !isNaN(proficiency)) {
+          skills.push({ name: skillName, proficiency });
+        }
+      } else {
+        // If no proficiency found, add with default value
+        skills.push({ 
+          name: itemText,
+          proficiency: type === 'matched' ? 80 : 20
+        });
+      }
     }
   }
   
-  if (skillSection) {
-    // Look for list items in the skill section
-    const skillItems = skillSection.match(/<li>(.*?)<\/li>/g) || [];
-    
-    skillItems.forEach(item => {
-      const skillName = item.replace(/<li>(.*?)<\/li>/, '$1')
-        .replace(/<.*?>/g, '')  // Remove any HTML tags
-        .replace(/\(.*?\)/g, '') // Remove any text in parentheses
-        .trim();
-      
-      if (skillName) {
-        // Generate realistic proficiency levels
-        const proficiency = type === 'matched' 
-          ? 70 + Math.floor(Math.random() * 25)  // 70-95 for matched skills
-          : Math.floor(Math.random() * 30);      // 0-30 for missing skills
-        
-        skills.push({ name: skillName, proficiency });
-      }
-    });
-  }
-  
-  // Ensure we have at least some skills if nothing was extracted
+  // Fallback if no skills found
   if (skills.length === 0) {
     if (type === 'matched') {
       skills.push({ name: 'Communication', proficiency: 85 });
@@ -239,20 +266,127 @@ function extractSkills(text: string, type: 'matched' | 'missing'): { name: strin
   return skills.slice(0, 8);
 }
 
-// Generate market data trends
-function generateMarketData(skills: { name: string; proficiency: number }[]): { labels: string[]; values: number[] } {
+// Extract market demand data
+function extractMarketData(text: string): { labels: string[]; values: number[] } {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun'];
+  const values: number[] = [];
   
-  // Generate an upward trend based on skill count and proficiency
-  const baseValue = 40;
-  const increment = skills.reduce((acc, skill) => acc + (skill.proficiency / 500), 0.5);
+  // Extract the market demand section
+  const sectionRegex = /MARKET_DEMAND:\s*<ul>([\s\S]*?)<\/ul>/i;
+  const sectionMatch = text.match(sectionRegex);
   
-  const values = months.map((_, index) => {
-    return Math.round(baseValue + (index * increment * 10));
-  });
+  if (sectionMatch && sectionMatch[1]) {
+    // Process each month
+    months.forEach(month => {
+      const monthRegex = new RegExp(`<li>${month}:\\s*(\\d+)`, 'i');
+      const monthMatch = sectionMatch[1].match(monthRegex);
+      
+      if (monthMatch && monthMatch[1]) {
+        values.push(parseInt(monthMatch[1], 10));
+      } else {
+        // Default value if month not found
+        values.push(40 + months.indexOf(month) * 5);
+      }
+    });
+  } else {
+    // Default data if section not found
+    values.push(40, 45, 52, 58, 65, 72);
+  }
+  
+  return { labels: months, values };
+}
+
+// Extract career projection data
+function extractCareerProjection(text: string): { average: number[]; projected: number[] } {
+  const average: number[] = [];
+  const projected: number[] = [];
+  
+  // Extract the career projection section
+  const sectionRegex = /CAREER_PROJECTION:\s*<ul>([\s\S]*?)<\/ul>/i;
+  const sectionMatch = text.match(sectionRegex);
+  
+  if (sectionMatch && sectionMatch[1]) {
+    // Extract average values
+    for (let i = 1; i <= 6; i++) {
+      const avgRegex = new RegExp(`<li>Average ${i} Year(?:s)?:\\s*(\\d+)`, 'i');
+      const avgMatch = sectionMatch[1].match(avgRegex);
+      
+      if (avgMatch && avgMatch[1]) {
+        average.push(parseInt(avgMatch[1], 10));
+      } else {
+        // Default value if not found
+        average.push(30 + (i * 10));
+      }
+    }
+    
+    // Extract projected values
+    for (let i = 1; i <= 6; i++) {
+      const projRegex = new RegExp(`<li>Projected ${i} Year(?:s)?:\\s*(\\d+)`, 'i');
+      const projMatch = sectionMatch[1].match(projRegex);
+      
+      if (projMatch && projMatch[1]) {
+        projected.push(parseInt(projMatch[1], 10));
+      } else {
+        // Default value if not found
+        projected.push(35 + (i * 10));
+      }
+    }
+  } else {
+    // Default data if section not found
+    average.push(30, 45, 60, 75, 85, 95);
+    projected.push(35, 50, 65, 80, 90, 98);
+  }
+  
+  return { average, projected };
+}
+
+// Extract business metrics data
+function extractBusinessMetrics(text: string): { timeToHire: { traditional: number; withTool: number }; costSavings: { traditional: number; withTool: number } } {
+  let traditionalTime = 45;
+  let toolTime = 15;
+  let traditionalCost = 5000;
+  let toolCost = 2000;
+  
+  // Extract the business metrics section
+  const sectionRegex = /BUSINESS_METRICS:\s*<ul>([\s\S]*?)<\/ul>/i;
+  const sectionMatch = text.match(sectionRegex);
+  
+  if (sectionMatch && sectionMatch[1]) {
+    // Extract time to hire values
+    const tradTimeRegex = /<li>Traditional Time to Hire:\s*(\d+)/i;
+    const tradTimeMatch = sectionMatch[1].match(tradTimeRegex);
+    if (tradTimeMatch && tradTimeMatch[1]) {
+      traditionalTime = parseInt(tradTimeMatch[1], 10);
+    }
+    
+    const toolTimeRegex = /<li>Tool Time to Hire:\s*(\d+)/i;
+    const toolTimeMatch = sectionMatch[1].match(toolTimeRegex);
+    if (toolTimeMatch && toolTimeMatch[1]) {
+      toolTime = parseInt(toolTimeMatch[1], 10);
+    }
+    
+    // Extract cost values
+    const tradCostRegex = /<li>Traditional Cost:\s*(\d+)/i;
+    const tradCostMatch = sectionMatch[1].match(tradCostRegex);
+    if (tradCostMatch && tradCostMatch[1]) {
+      traditionalCost = parseInt(tradCostMatch[1], 10);
+    }
+    
+    const toolCostRegex = /<li>Tool Cost:\s*(\d+)/i;
+    const toolCostMatch = sectionMatch[1].match(toolCostRegex);
+    if (toolCostMatch && toolCostMatch[1]) {
+      toolCost = parseInt(toolCostMatch[1], 10);
+    }
+  }
   
   return {
-    labels: months,
-    values
+    timeToHire: {
+      traditional: traditionalTime,
+      withTool: toolTime
+    },
+    costSavings: {
+      traditional: traditionalCost,
+      withTool: toolCost
+    }
   };
 }
