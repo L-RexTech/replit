@@ -11,6 +11,11 @@ interface GeminiAPIResponse {
     finishReason: string;
     index: number;
   }[];
+  error?: {
+    code: number;
+    message: string;
+    status: string;
+  };
 }
 
 export default function useGeminiAPI() {
@@ -23,14 +28,27 @@ export default function useGeminiAPI() {
     setError(null);
 
     try {
+      // Validate inputs
+      if (!resumeText.trim()) {
+        throw new Error("Resume text is empty. Please upload a valid resume.");
+      }
+      
+      if (!jobDescription.trim()) {
+        throw new Error("Job description is empty. Please enter a job description.");
+      }
+      
+      if (!apiKey.trim()) {
+        throw new Error("API key is required. Please enter your Gemini API key.");
+      }
+
       // Construct the prompt for Gemini API
       const prompt = `
         As an AI career assistant, analyze the following resume and job description. 
         Provide a detailed analysis including:
         
         1. A job fit score as a percentage (e.g., 75%)
-        2. List of matched skills found in both the resume and job description
-        3. List of missing skills that are in the job description but not in the resume
+        2. List of matched skills found in both the resume and job description with HTML <ul> and <li> tags
+        3. List of missing skills that are in the job description but not in the resume with HTML <ul> and <li> tags
         4. A brief analysis of the candidate's fit for the role and recommendations
         
         Resume:
@@ -39,9 +57,12 @@ export default function useGeminiAPI() {
         Job Description:
         ${jobDescription}
         
-        Format your response in HTML format with proper headings and bullet points. Include a job fit score at the beginning.
+        Format your response in HTML format with proper <h1>, <h2>, <h3> headings and <ul>, <li> bullet points. 
+        Include a job fit score as a percentage at the beginning.
         Also provide data about the market demand trends for these skills over the past 6 months.
       `;
+      
+      console.log("Sending request to Gemini API...");
       
       // Call the Gemini API
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.0-pro:generateContent?key=${apiKey}`, {
@@ -68,18 +89,33 @@ export default function useGeminiAPI() {
         })
       });
 
+      const responseData = await response.json();
+      
+      // Check for API error
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`API error: ${response.status} - ${errorText}`);
+        console.error("Gemini API error:", responseData);
+        
+        if (responseData.error) {
+          if (responseData.error.code === 400) {
+            throw new Error(`API error: ${responseData.error.message || "Bad request. Check your inputs."}`);
+          } else if (responseData.error.code === 401) {
+            throw new Error("Invalid API key. Please check your API key and try again.");
+          } else if (responseData.error.code === 429) {
+            throw new Error("Rate limit exceeded. Please try again later.");
+          } else {
+            throw new Error(`API error: ${responseData.error.message || "Unknown error occurred."}`);
+          }
+        }
+        
+        throw new Error(`API error: ${response.status} - ${JSON.stringify(responseData)}`);
       }
 
-      const responseData: GeminiAPIResponse = await response.json();
-      
       if (!responseData.candidates || responseData.candidates.length === 0) {
-        throw new Error('No response received from Gemini API');
+        throw new Error('No response received from Gemini API. Try a different prompt or check your inputs.');
       }
       
       const textResponse = responseData.candidates[0].content.parts[0].text;
+      console.log("Received response from Gemini API");
       
       // Extract job fit score from response
       const scoreMatch = textResponse.match(/(\d+)%/);
@@ -124,6 +160,7 @@ export default function useGeminiAPI() {
       setData(analysisData);
       return analysisData;
     } catch (err: any) {
+      console.error("Analysis error:", err);
       setError(err.message || "Failed to analyze with Gemini API");
       throw err;
     } finally {
@@ -137,19 +174,42 @@ export default function useGeminiAPI() {
 // Helper function to extract skills from Gemini response
 function extractSkills(text: string, type: 'matched' | 'missing'): { name: string; proficiency: number }[] {
   const skills: { name: string; proficiency: number }[] = [];
-  const regex = type === 'matched' 
-    ? /Matched skills:([^]*?)(?=Missing skills:|$)/mi
-    : /Missing skills:([^]*?)(?=Recommendations:|$)/mi;
   
-  const match = text.match(regex);
+  // Try multiple potential patterns for extracting skills
+  const regexPatterns = [
+    // Standard pattern
+    type === 'matched' 
+      ? /Matched skills:([^]*?)(?=Missing skills:|$)/mi
+      : /Missing skills:([^]*?)(?=Recommendations:|$)/mi,
+    // Alternative with headers
+    type === 'matched'
+      ? /<h[2-3]>.*?match.*?skills.*?<\/h[2-3]>([^]*?)(?=<h[2-3]>|$)/i
+      : /<h[2-3]>.*?missing.*?skills.*?<\/h[2-3]>([^]*?)(?=<h[2-3]>|$)/i,
+    // Alternative with strong tags
+    type === 'matched'
+      ? /<strong>.*?match.*?skills.*?<\/strong>([^]*?)(?=<strong>|$)/i
+      : /<strong>.*?missing.*?skills.*?<\/strong>([^]*?)(?=<strong>|$)/i
+  ];
   
-  if (match && match[1]) {
-    const skillSection = match[1];
+  let skillSection = "";
+  
+  // Try each pattern until we find one that works
+  for (const regex of regexPatterns) {
+    const match = text.match(regex);
+    if (match && match[1]) {
+      skillSection = match[1];
+      break;
+    }
+  }
+  
+  if (skillSection) {
+    // Look for list items in the skill section
     const skillItems = skillSection.match(/<li>(.*?)<\/li>/g) || [];
     
     skillItems.forEach(item => {
       const skillName = item.replace(/<li>(.*?)<\/li>/, '$1')
-        .replace(/\(.*?\)/g, '')  // Remove any text in parentheses
+        .replace(/<.*?>/g, '')  // Remove any HTML tags
+        .replace(/\(.*?\)/g, '') // Remove any text in parentheses
         .trim();
       
       if (skillName) {
@@ -175,7 +235,8 @@ function extractSkills(text: string, type: 'matched' | 'missing'): { name: strin
     }
   }
   
-  return skills;
+  // Limit to top 8 skills for better visualization
+  return skills.slice(0, 8);
 }
 
 // Generate market data trends
